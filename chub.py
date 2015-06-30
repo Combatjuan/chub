@@ -1,7 +1,10 @@
 #!/usr/bin/env leds_python
 import sys
+import os
 import argparse
 import curses
+import shlex
+import subprocess
 
 DESCRIPTION = "Chat on GitHub - AKA CHUB"
 
@@ -52,13 +55,30 @@ def begin_chat(host):
 	return screen
 
 # ==============================================================================
+def post(message):
+	with open("data/public.room", "a+") as f:
+		f.seek(0, os.SEEK_END)
+		f.write(' ')
+
+	run("git add data/public.room")
+	run("git commit -m '{}'".format(message))
+	run("git push")
+
+# ==============================================================================
+def clear_prompt(app):
+	app.addstr(">")
+
+# ==============================================================================
 def chat(host, app):
 	input = ''
 	height, width = app.getmaxyx()
 	app.move(height - 2, 2)
-	app.addstr(">")
+	clear_prompt(app)
 	while input != 'quit':
 		input = app.getstr(height - 2, 4)
+		post(input)
+
+		clear_prompt(app)
 
 # ==============================================================================
 def end_chat(host):
