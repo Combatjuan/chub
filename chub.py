@@ -2,14 +2,16 @@
 import sys
 import os
 import argparse
-import curses
 import shlex
 import subprocess
+import urwid
 
 DESCRIPTION = "Chat on GitHub - AKA CHUB"
 
 DEFAULT_HOST = 'https://github.com/Combatjuan/chub'
 VERSION = 0.1
+
+CURRENT_ROOM = 'public'
 
 #===============================================================================
 def run(command, cwd=None):
@@ -35,7 +37,7 @@ def parse_args():
 
 	parser.add_argument("-?", "--help", action="help")
 
-	parser.add_argument('host', action='store', nargs=1, default=DEFAULT_HOST,
+	parser.add_argument('--host', action='store', default=DEFAULT_HOST,
 			help='Chat host to connect to.')
 
 	args = parser.parse_args()
@@ -43,56 +45,87 @@ def parse_args():
 	return args
 
 # ==============================================================================
-def begin_chat(host):
-	screen = curses.initscr()
-	curses.start_color()
-	height, width = screen.getmaxyx()
-	vcenter = int(height / 2)
-	screen.move(vcenter, 2)
-	screen.addstr("Welcome to Chub Version {}".format(VERSION))
-	screen.move(vcenter + 1, 2)
-	screen.addstr("'quit' to quit.")
-	return screen
-
-# ==============================================================================
 def post(message):
-	with open("data/public.room", "a+") as f:
+	with open("data/{}.room".format(CURRENT_ROOM), "a+") as f:
 		f.seek(0, os.SEEK_END)
 		f.write(' ')
 
-	run("git add data/public.room")
+	run("git add data/{}.room".format(CURRENT_ROOM))
 	run("git commit -m '{}'".format(message))
-	run("git push")
+	# run("git push")
+
+# ==============================================================================
+def switch_rooms(room):
+	global CURRENT_ROOM
+	CURRENT_ROOM = room
 
 # ==============================================================================
 def clear_prompt(app):
+	height, width = app.getmaxyx()
+	app.move(height - 2, 2)
 	app.addstr(">")
 
 # ==============================================================================
-def chat(host, app):
-	input = ''
-	height, width = app.getmaxyx()
-	app.move(height - 2, 2)
-	clear_prompt(app)
-	while input != 'quit':
-		input = app.getstr(height - 2, 4)
-		post(input)
-
-		clear_prompt(app)
+def get_command_args(command):
+	parts = command.split(" ")[1:]
+	return parts
 
 # ==============================================================================
-def end_chat(host):
-	curses.endwin()
+def chat(host):
+	class ConversationListBox(urwid.ListBox):
+		def __init__(self):
+			body = urwid.SimpleFocusListWalker([])
+			super(ConversationListBox, self).__init__(body)
+			self.set_focus_valign(('relative', 100))
+
+		def add_message(self, msg):
+			self.body.append(urwid.Text(('message', msg)))
+
+		def add_meta_message(self, msg):
+			self.body.append(urwid.Text(('meta', msg)))
+
+	class MessageEdit(urwid.Edit):
+		def __init__(self):
+			super(MessageEdit, self).__init__()
+			urwid.register_signal(MessageEdit, ['send_message', 'send_meta_message'])
+
+		def keypress(self, size, key):
+			key = super(MessageEdit, self).keypress(size, key)
+			if key != 'enter':
+				return key
+
+			msg = self.edit_text
+			if msg == "!quit":
+				raise urwid.ExitMainLoop()
+			elif msg.startswith("!switch"):
+				args = get_command_args(msg)
+				switch_rooms(*args)
+				urwid.emit_signal(self, 'send_meta_message', 'Switched to room {}.'.format(args[0]))
+			else:
+				post(msg)
+				urwid.emit_signal(self, 'send_message', msg)
+
+			self.set_edit_text('')
+
+	palette = [
+		('message', 'default', 'default'),
+		('meta', 'dark blue', 'default'),
+	]
+	conversation = ConversationListBox()
+	message_edit = MessageEdit()
+
+	layout = urwid.Frame(conversation, footer=message_edit)
+	layout.set_focus('footer')
+
+	urwid.connect_signal(message_edit, 'send_message', conversation.add_message)
+	urwid.connect_signal(message_edit, 'send_meta_message', conversation.add_meta_message)
+
+	urwid.MainLoop(layout, palette).run()
 
 # ==============================================================================
 def main():
 	args = parse_args()
-	try:
-		app = begin_chat(args.host)
-		chat(args.host, app)
-	# You do not want to accidentally forget to end your curses sessions.  Leaves a bit mess.
-	finally:
-		end_chat(args.host)
+	chat(args.host)
 
 # ==============================================================================
 if __name__ == '__main__':
