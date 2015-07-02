@@ -78,6 +78,13 @@ def chat(host):
 			super(ConversationListBox, self).__init__(body)
 			self.set_focus_valign(('relative', 100))
 
+			initial_messages = [
+				"Welcome to Chub version {}".format(VERSION),
+				"Available commands: !quit, !switch <room>",
+			]
+			for msg in initial_messages:
+				self.add_meta_message(msg)
+
 		def add_message(self, msg):
 			self.body.append(urwid.Text(('message', msg)))
 
@@ -86,7 +93,7 @@ def chat(host):
 
 	class MessageEdit(urwid.Edit):
 		def __init__(self):
-			super(MessageEdit, self).__init__()
+			super(MessageEdit, self).__init__(caption='> ')
 			urwid.register_signal(MessageEdit, ['send_message', 'send_meta_message'])
 
 		def keypress(self, size, key):
@@ -110,12 +117,13 @@ def chat(host):
 	palette = [
 		('message', 'default', 'default'),
 		('meta', 'dark blue', 'default'),
+		('message_field', 'black,bold', 'light gray'),
 	]
 	conversation = ConversationListBox()
 	message_edit = MessageEdit()
+	wrapped_edit = urwid.AttrMap(message_edit, 'message_field')
 
-	layout = urwid.Frame(conversation, footer=message_edit)
-	layout.set_focus('footer')
+	layout = urwid.Frame(conversation, footer=wrapped_edit, focus_part='footer')
 
 	urwid.connect_signal(message_edit, 'send_message', conversation.add_message)
 	urwid.connect_signal(message_edit, 'send_meta_message', conversation.add_meta_message)
